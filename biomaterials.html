@@ -1,0 +1,95 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title>Mining Novel Biomaterials with Scikit-learn</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+</head>
+<body>
+
+<header>
+  <h1> <a href=index.html>Mark Szepieniec</a></h1>
+</header>
+
+<div id="header">
+<h1 class="title">Mining Novel Biomaterials with Scikit-learn</h1>
+<h3 class="date">september 2014</h3>
+</div>
+<p>The <a href="http://www.materialsproject.org">Materials Project</a> is an international academic collaboration which is building a database of simulated data on the physical properties of a large number of materials, both existing and predicted ones. The vision is that this aggregated data will enable data-driven approaches to materials discovery, by allowing for computational, rather than (or in tandem with) experimental evaluation of candidate materials for a given application. Given some information on how certain materials perform in a given application, engineers could use the materials database data, together with machine learning algorithms, to find other materials that might perform well, given their calculated properties.</p>
+<p>Since the data is freely available (after registering for an API key), I thought it would be interesting to set up a workflow for materials discovery, using as a test case the problem of hemocompatibility of inorganic coating materials.</p>
+<h2 id="a-brief-introduction-to-hemocompatibility">A Brief Introduction to Hemocompatibility</h2>
+<p>For many biomedical applications, it is required that the materials used are biocompatible, that is, they do not cause harm to the biological system they come into contact with. Biocompatibility is heavily context-dependent so it is easier to study a more specific problem, in this case hemocompatibility, the degree to which a biomaterial can be brought into contact with the human bloodstram without harming the patient or losing function. In a nutshell, hemocompatibility is directly related to the propensity of a material to cause the formation of blood clots form. The clotting propery of blood is important for the body's healing process, but clotting when it is not necessary can impede bloodflow and lead to loss of organ function and even death. Therefore, a material with high hemocompatibility will be one that leads to a low rate of clot formation when it is introduced to the bloodstream. Since the process of clotting originates with the activation of a type of blood particles called platelets, hemocompatibility studies need to examine the interaction of materials with platelets.</p>
+<div class="figure">
+<img src="platelet_party.png" alt="(image source)" /><p class="caption"><a href="http://theawkwardyeti.com/comic/blood-clot/">(image source)</a></p>
+</div>
+<h2 id="obtaining-training-data">Obtaining Training Data</h2>
+<p>I based myself on an experimental study published by Lackner et al., available <a href="http://www.mdpi.com/2079-4983/3/2/283/htm">here</a>. The authors study the hemocompatibility of a variety of inorganic films deposited on a polymer substrate. There are a variety of experiments that can be related to a material's hemocompatibility; I chose to only include one of them, since this is just a proof of concept.</p>
+<div class="figure">
+<img src="hemocompat.jpg" />
+</div>
+<p>The above figure shows the data from the experimental study. On the horizontal axis is the percentage of platelets that remained bound to the material after a standardized test in which an apparatus was used to try to rub the platelets off the material. A high value means that the adhesion of platelets to the material is strong, which is a positive sign for hemocompatibility, because platelets that attach and then detach from foreign materials are highly likely to induce clotting.</p>
+<p>The vertical axis shows the degree of activation of a certain glycoprotein on the platelets that adhered to the material. This activation is a sign of clotting so a low value indicates good hemocompatibility. Therefore, the axis of hemocompatibility goes from the upper left of the graph (bad) to lower right (good).</p>
+<p>This data will constitute a (very limited) training set for a machine learning algorithm, which means we need a way of scoring them by their hemocompatibility. I have done this here by simply taking the score to be x-value subtracted by the y-value.</p>
+<h2 id="feature-selection">Feature Selection</h2>
+<p>Next we need to decide what data from the Materials Project database to use, for both the materials we have scores for (the training set), and the materials we would like to evaluate using our model. The properties I decided to use were &quot;band_gap&quot;, &quot;e_above_hull&quot;, (a measure for the stability of the material), &quot;energy_per_atom&quot;, and &quot;formation_energy_per_atom&quot;. These properties were selected for their convenience (they are all real numbers, which makes them easy to plug into the machine learning algorithm) and because they can all plausibly be related to the stability of the material and its surface, and therefore its hemocompatibility.</p>
+<p>(Note: trained physicists might object to the inclusion of the &quot;energy_per_atom&quot; property, on the grounds that it is a physically meaningless number that comes out of a calculation. This is not quite true; while it does not have a direct physical interpretation, it will be correlated with the atomic numbers of the atoms in the unit cell, and therefore will also be correlated to other properties such as the lattice parameter, which might plausibly have an influence on the material's hemocompatibility.)</p>
+<p>Things were complicated by the fact that all the materials in the experimental study were deposited from the gas phase, and therefore had amorphous (i.e. not crystalline) structure, which wasn’t the case for any of the materials I could find in the database. I worked around this in the following way: For a given material, gather all the database entries with exactly the same elemental composition, regardless of stoichiometry. Then, for each property I wanted, I simply averaged over all the entries in my filtered set. This is suboptimal of course, as it will include materials that are not very similar to the taget material, but it saved me having to trawl through all the returned entries manually to select only the most appropriate materials.</p>
+<p>Once I had the <span class="math">6 × 4</span> array containing the averaged properties for each material, I used python’s <a href="http://www.scikit-learn.org">scikit-learn library</a> to standardize the data (i.e. rescale the properties so that they have similar ranges, which generally improves the numerical stability of the algorithm), and then train a simple linear regression model on it.</p>
+<h2 id="evaluating-the-model">Evaluating the Model</h2>
+<p>We can now use the trained model to predict the hemocompatibility of new materials. I queried the Materials Project database for all materials containing a broad set of elements: {H, C, N, O, Si, P, S, Sc, Ti, V}. Out of the 1426 entries contained in the response of the query, here are the highest scoring ones, after removing volatile gases, pure carbon allotropes, and duplicate entries:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Chemical Formula</th>
+<th align="center">Model Score</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Si<sub>2</sub>CN<sub>4</sub></td>
+<td align="center">0.385</td>
+</tr>
+<tr class="even">
+<td align="left">Si(CN<sub>2</sub>)<sub>2</sub></td>
+<td align="center">0.383</td>
+</tr>
+<tr class="odd">
+<td align="left">Si<sub>3</sub>N<sub>4</sub></td>
+<td align="center">0.347</td>
+</tr>
+<tr class="even">
+<td align="left">Si<sub>2</sub>N<sub>2</sub>O</td>
+<td align="center">0.298</td>
+</tr>
+<tr class="odd">
+<td align="left">P<sub>4</sub>N<sub>6</sub>O</td>
+<td align="center">0.262</td>
+</tr>
+<tr class="even">
+<td align="left">V<sub>6</sub>C<sub>5</sub></td>
+<td align="center">0.256</td>
+</tr>
+<tr class="odd">
+<td align="left">V<sub>2</sub>C</td>
+<td align="center">0.253</td>
+</tr>
+<tr class="even">
+<td align="left">PNO</td>
+<td align="center">0.246</td>
+</tr>
+<tr class="odd">
+<td align="left">V<sub>8</sub>C<sub>7</sub></td>
+<td align="center">0.243</td>
+</tr>
+</tbody>
+</table>
+<p>Note that the top four of these entries contain only elements present in the training set, but in different combinations. This indicates to me that the model, however crude, is at least not obviously inaccurate.</p>
+<h2 id="closing-thoughts">Closing Thoughts</h2>
+<p>This is obviously a rudimentary analysis, and there are several clear ways to make the results more rigorous. Firstly, implementing cross-validation is a must for any serious machine learning approach to a problem. This means taking some data out of the training set, training the model, and checking that it performs adequately on the removed data (I decided to skip cross-validation since there were only six training samples anyway). In addition, having (much) more training data would vastly improve the predictiveness of the model (see Peter Norvig's <a href="http://research.google.com/pubs/archive/35179.pdf">article</a>). Finally, the Materials Project data contains much more information per material than the four properties I have used. The other features, such as chemical formula, symmetry group, etc. would add information and therefore possibly improve performance of the machine learning algorithm, but they would need to be transformed to floating point numbers in order to be used.</p>
+<p>For those reasons and others, I wouldn't rent lab space to test these results just yet, but it's interesting that such a simple model, trained on so little data, can produce at least a plausible result.</p>
+<p>Code for this project can be found <a href="https://github.com/mszep/biomaterials">here</a>.</p>
+</body>
+</html>
